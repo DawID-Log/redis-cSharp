@@ -1,0 +1,1 @@
+for i in {1..5}; do redis-cli ECHO "ciao $i"; done
