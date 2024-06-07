@@ -414,62 +414,44 @@ async Task<bool> HandleCommandResponse(string[] request, Socket client,
       return true;
 
     case "wait":
+      if(isSlave) {
+        return false;
+      }
+
       if(request.Length < 4) {
         response = Transform("WAIT <a> <b> ~ where a stands for the number of replicas and b stands for the expected time");
         break;
       }
 
-      // var numOfReplicasStr = request[4];
-      // var timeoutStr = request[6];
-      // Console.WriteLine("WAIT {0} {1}", numOfReplicasStr, timeoutStr);
-      // int timeout = int.Parse(timeoutStr ?? "0");
-      // var numOfReplicas = int.Parse(numOfReplicasStr ?? "1");
-      // Dictionary<IntPtr, Replica> localReplicas;
-      // _replicasLock.EnterReadLock();
-      // try {
-      //   localReplicas = new(_replicas);
-      // } finally {
-      //   _replicasLock.ExitReadLock();
-      // }
+      var numOfReplicasStr = request[4];
+      var timeoutStr = request[6];
+      Console.WriteLine("WAIT {0} {1}", numOfReplicasStr, timeoutStr);
+      int timeout = int.Parse(timeoutStr ?? "0");
+      var numOfReplicas = int.Parse(numOfReplicasStr ?? "1");
+      ConcurrentBag<Socket> replicasLocal = [];
+      int replicasCount = replicas.Count;
+      int responsesReceived = 0;
+      int indexReplicaToBeAdd = 0;
 
-      // int replicasCount = replicas.Count;
-      // long responsesReceived = 0;
+      if (replicasLocal.Count > 0) {
+          while(indexReplicaToBeAdd < replicas.Count || indexReplicaToBeAdd < numOfReplicas) {
+            replicasLocal.Add(replicas.ToArray()[indexReplicaToBeAdd]);
+            indexReplicaToBeAdd++;
+          }
+          int index = 0;
+          var req = TransformArray(new List<object> { "REPLCONF", "GETACK", "*" });
+          var reqBytes = Encoding.ASCII.GetBytes(req);
+          var tasks = replicasLocal.Where(replica => replica.Connected).Select(replica => replica.SendAsync(reqBytes));
+          await Task.WhenAll(tasks);
+          responsesReceived++;
+      } else {
+        responsesReceived = replicasCount;
+      }
+      Console.WriteLine("ACK received:{0}", responsesReceived);
 
-      // if (masterOffset > 0) {
-      //   try {
-      //     Task[] tasks = new Task[localReplicas.Count];
-      //     int index = 0;
-      //     var req = new RESP.RESPArray<RESP.RESPBulkString>();
-      //     req.Items.Add(new RESP.RESPBulkString("REPLCONF"));
-      //     req.Items.Add(new RESP.RESPBulkString("GETACK"));
-      //     req.Items.Add(new RESP.RESPBulkString("*"));
-      //     var reqBytes = Encoding.ASCII.GetBytes(req.Serialize());
-      //     foreach (var item in localReplicas) {
-      //       var actualItem = item;
-      //       tasks[index] = ProcessAck(actualItem.Value, reqBytes);
-      //       index++;
-      //     }
-      //     var masterOffsetToConfirm = masterOffset;
-      //     Console.WriteLine("Master offset: {0}", masterOffsetToConfirm);
-      //     masterOffset += reqBytes.Length;
-      //     Task.WaitAll(tasks.ToArray(), timeout + 200);
-      //     foreach (var item in localReplicas) {
-      //       Console.WriteLine("Repl {0} offset: {1}", item.Value.Id,
-      //                         item.Value.Offset);
-      //       if (item.Value.Offset == masterOffset)
-      //         responsesReceived++;
-      //     }
-      //   } catch (Exception ex) {
-      //     Console.WriteLine("Exception. {0}", ex.ToString());
-      //     throw;
-      //   }
-      // } else {
-      //   responsesReceived = replicasCount;
-      // }
-      // Console.WriteLine("ACK received:{0}", responsesReceived);
-      // var responseBytes = new RESP.RESPInteger(responsesReceived).Serialize();
+      response = Transform(responsesReceived);
+      Console.WriteLine("response:{0}", response);
 
-      response = Transform(replicas.Count);
       break;
 
     default:
